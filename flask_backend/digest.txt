@@ -1,0 +1,1132 @@
+Directory structure:
+└── flask_backend/
+    ├── config.py
+    ├── requirements.txt
+    ├── run.py
+    ├── .env.local
+    └── app/
+        ├── __init__.py
+        ├── models/
+        │   └── __init__.py
+        ├── routes/
+        │   ├── __init__.py
+        │   └── main.py
+        ├── services/
+        │   ├── __init__.py
+        │   └── article_service.py
+        ├── tasks/
+        │   ├── __init__.py
+        │   ├── analyzer.py
+        │   └── scraper.py
+        └── utils/
+            └── __init__.py
+
+================================================
+File: config.py
+================================================
+# flask_backend/config.py
+
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local
+load_dotenv('.env.local')
+
+class Config:
+    """Base configuration."""
+    SECRET_KEY = os.getenv('SECRET_KEY', 'a_very_secret_key_for_dev') # Replace with a strong secret key in production
+    MONGO_URI = os.getenv('MONGODB_URI')
+    NEWS_API_KEY = os.getenv('NEWS_API_KEY_SCRAPER') # Renamed from NEWS_API_KEY for clarity
+    GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+    FLASK_ENV = os.getenv('FLASK_ENV', 'development')
+    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    SCRAPE_INTERVAL_HOURS = int(os.getenv('SCRAPE_INTERVAL_HOURS', 4))
+    BATCH_SIZE_ANALYSIS = int(os.getenv('BATCH_SIZE_ANALYSIS', 10))
+
+    if not MONGO_URI:
+        raise ValueError("No MONGO_URI provided. Set MONGODB_URI env variable.")
+    if not NEWS_API_KEY:
+        raise ValueError("No NEWS_API_KEY provided. Set NEWS_API_KEY_SCRAPER env variable.")
+    if not GOOGLE_API_KEY:
+        raise ValueError("No GOOGLE_API_KEY provided. Set GOOGLE_API_KEY env variable.")
+
+class DevelopmentConfig(Config):
+    """Development configuration."""
+    DEBUG = True
+
+class ProductionConfig(Config):
+    """Production configuration."""
+    DEBUG = False
+    FLASK_ENV = 'production'
+    # Add any production-specific settings here
+
+def get_config():
+    env = os.getenv('FLASK_ENV', 'development')
+    if env == 'production':
+        return ProductionConfig()
+    return DevelopmentConfig()
+
+
+================================================
+File: requirements.txt
+================================================
+Flask
+pymongo
+python-dotenv
+newsapi-python
+newspaper3k
+sentence-transformers
+google-generativeai
+pydantic
+gunicorn # For production deployment
+
+
+================================================
+File: run.py
+================================================
+# flask_backend/run.py
+
+from app import create_app
+from config import get_config
+import os
+
+# Get configuration based on environment
+config = get_config()
+
+# Create the Flask app
+app = create_app(config)
+
+if __name__ == '__main__':
+    # Run the Flask app
+    app.run(host='0.0.0.0', port=5000)
+
+
+================================================
+File: .env.local
+================================================
+NEWS_API_KEY_SCRAPER=3947efaec8434d89ac545eb02f4b245d
+MONGODB_URI=mongodb+srv://jefino9488:Jefino1537@truthguardcluster.2wku5ai.mongodb.net/?retryWrites=true&w=majority&appName=TruthGuardCluster
+GOOGLE_API_KEY=AIzaSyDddsNXdg4bP-BxWFvqgdXlP-BiY8A_tNs
+
+# Flask specific (optional, can be set in app.py directly too)
+FLASK_ENV="development"
+FLASK_DEBUG="True"
+SCRAPE_INTERVAL_HOURS="4"
+BATCH_SIZE_ANALYSIS="10" # Default batch size for analysis tasks
+
+
+
+================================================
+File: app/__init__.py
+================================================
+# flask_backend/app/__init__.py
+
+from flask import Flask
+import logging
+from pymongo import MongoClient
+
+# Initialize MongoDB client globally (or per request, but for simplicity, global for now)
+mongo_client = None
+db = None
+
+def create_app(config_object):
+    """
+    Factory function to create and configure the Flask application.
+    """
+    app = Flask(__name__)
+    app.config.from_object(config_object)
+
+    # Configure logging for the Flask app
+    logging.basicConfig(level=logging.INFO)
+    app.logger.setLevel(logging.INFO)
+
+    # Initialize MongoDB
+    global mongo_client, db
+    try:
+        mongo_client = MongoClient(app.config['MONGO_URI'])
+        db = mongo_client.truthguard # 'truthguard' is your database name
+        app.logger.info("Successfully connected to MongoDB!")
+    except Exception as e:
+        app.logger.error(f"Failed to connect to MongoDB: {e}")
+        # Depending on your deployment, you might want to exit or handle gracefully
+        # sys.exit(1) # This would exit the application if DB connection fails at startup
+
+    # Register blueprints (routes will be added here later)
+    from .routes.main import main_bp [cite: 95]
+    app.register_blueprint(main_bp)
+
+    # Add a simple route to check if the app is running
+    @app.route('/')
+    def index():
+        return "TruthGuard Backend is running!"
+
+    return app
+
+
+================================================
+File: app/models/__init__.py
+================================================
+
+
+
+================================================
+File: app/routes/__init__.py
+================================================
+from .main import main_bp
+
+
+================================================
+File: app/routes/main.py
+================================================
+# flask_backend/app/routes/main.py
+
+from flask import Blueprint, request, jsonify, current_app
+from app.tasks import NewsAPIFetcherTask, GeminiAnalyzerTask
+from app.services import ArticleService
+from app import db # Import the global db client
+
+main_bp = Blueprint('main', __name__)
+
+@main_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({"status": "ok", "message": "TruthGuard Backend is healthy!"}), 200
+
+@main_bp.route('/scrape', methods=['POST'])
+def trigger_scrape():
+    """
+    API endpoint to trigger the news scraping task.
+    """
+    try:
+        # Get configuration from Flask app config
+        news_api_key = current_app.config['NEWS_API_KEY']
+
+        # Instantiate the scraper task
+        scraper = NewsAPIFetcherTask(db, news_api_key)
+
+        # Run scraper in a non-blocking way (e.g., using a thread or process for a simple app)
+        # For production, consider using Celery or similar task queue.
+        # Here, we'll run it directly but in a new thread to not block the request.
+        import threading
+        thread = threading.Thread(target=scraper.run_scraper)
+        thread.start()
+
+        return jsonify({"message": "News scraping initiated successfully!", "status": "processing"}), 202 # 202 Accepted
+    except Exception as e:
+        current_app.logger.error(f"Error triggering scraping: {e}")
+        return jsonify({"error": "Failed to initiate scraping task", "details": str(e)}), 500
+
+@main_bp.route('/analyze', methods=['POST'])
+def trigger_analysis():
+    """
+    API endpoint to trigger the AI analysis task.
+    """
+    try:
+        # Get configuration from Flask app config
+        google_api_key = current_app.config['GOOGLE_API_KEY']
+        batch_size = current_app.config['BATCH_SIZE_ANALYSIS']
+
+        # Instantiate the analyzer task
+        analyzer = GeminiAnalyzerTask(db, google_api_key)
+
+        # Run analyzer in a non-blocking way
+        import threading
+        thread = threading.Thread(target=analyzer.run_analyzer, args=(batch_size,))
+        thread.start()
+
+        return jsonify({"message": "AI analysis initiated successfully!", "status": "processing"}), 202
+    except Exception as e:
+        current_app.logger.error(f"Error triggering analysis: {e}")
+        return jsonify({"error": "Failed to initiate analysis task", "details": str(e)}), 500
+
+@main_bp.route('/articles', methods=['GET'])
+def get_articles():
+    """
+    API endpoint to retrieve a paginated list of articles.
+    Query parameters: page, limit, sort_by, sort_order
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    sort_by = request.args.get('sort_by', 'published_at', type=str)
+    sort_order = request.args.get('sort_order', 'desc', type=str)
+
+    service = ArticleService(db)
+    result = service.get_all_articles(page, limit, sort_by, sort_order)
+    if "error" in result:
+        return jsonify(result), 500
+    return jsonify(result), 200
+
+@main_bp.route('/articles/<article_id>', methods=['GET'])
+def get_article_detail(article_id):
+    """
+    API endpoint to retrieve details of a single article by its ID.
+    """
+    service = ArticleService(db)
+    article = service.get_article_by_id(article_id)
+    if article:
+        return jsonify(article), 200
+    return jsonify({"message": "Article not found"}), 404
+
+@main_bp.route('/articles/search', methods=['GET'])
+def search_articles_endpoint():
+    """
+    API endpoint to search articles.
+    Query parameters: q (query string), page, limit, sort_by, sort_order
+    """
+    query = request.args.get('q', type=str)
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    sort_by = request.args.get('sort_by', 'score', type=str) # Default sort by text score for search
+    sort_order = request.args.get('sort_order', 'desc', type=str)
+
+    if not query:
+        return jsonify({"error": "Query parameter 'q' is required for search."}), 400
+
+    service = ArticleService(db)
+    result = service.search_articles(query, page, limit, sort_by, sort_order)
+    if "error" in result:
+        return jsonify(result), 500
+    return jsonify(result), 200
+
+@main_bp.route('/articles/high-bias', methods=['GET'])
+def get_high_bias_articles():
+    """
+    API endpoint to retrieve articles flagged with high bias.
+    Query parameters: min_score, page, limit, sort_order
+    """
+    min_score = request.args.get('min_score', 0.7, type=float)
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    sort_order = request.args.get('sort_order', 'desc', type=str)
+
+    service = ArticleService(db)
+    result = service.get_articles_by_bias_score(min_score, page, limit, sort_order)
+    if "error" in result:
+        return jsonify(result), 500
+    return jsonify(result), 200
+
+@main_bp.route('/articles/misinformation-risk', methods=['GET'])
+def get_misinformation_risk_articles():
+    """
+    API endpoint to retrieve articles flagged with high misinformation risk.
+    Query parameters: min_risk, page, limit, sort_order
+    """
+    min_risk = request.args.get('min_risk', 0.6, type=float)
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    sort_order = request.args.get('sort_order', 'desc', type=str)
+
+    service = ArticleService(db)
+    result = service.get_articles_by_misinformation_risk(min_risk, page, limit, sort_order)
+    if "error" in result:
+        return jsonify(result), 500
+    return jsonify(result), 200
+
+
+================================================
+File: app/services/__init__.py
+================================================
+from .article_service import ArticleService
+
+
+================================================
+File: app/services/article_service.py
+================================================
+# flask_backend/app/services/article_service.py
+
+import logging
+from bson.objectid import ObjectId
+from pymongo import ASCENDING, DESCENDING
+
+logger = logging.getLogger(__name__)
+
+class ArticleService:
+    def __init__(self, db_client):
+        self.db = db_client
+        self.articles_collection = self.db.articles
+
+    def get_all_articles(self, page=1, limit=10, sort_by="published_at", sort_order="desc"):
+        """
+        Retrieves a paginated list of articles from the database.
+        """
+        skip = (page - 1) * limit
+        sort_direction = ASCENDING if sort_order.lower() == "asc" else DESCENDING
+
+        try:
+            articles_cursor = self.articles_collection.find({}) \
+                .sort(sort_by, sort_direction) \
+                .skip(skip) \
+                .limit(limit)
+            articles = []
+            for article in articles_cursor:
+                article['_id'] = str(article['_id']) # Convert ObjectId to string for JSON serialization
+                articles.append(article)
+
+            total_articles = self.articles_collection.count_documents({})
+
+            logger.info(f"Retrieved {len(articles)} articles (page {page}, limit {limit})")
+            return {
+                "articles": articles,
+                "total_results": total_articles,
+                "page": page,
+                "limit": limit
+            }
+        except Exception as e:
+            logger.error(f"Error fetching all articles: {e}")
+            return {"articles": [], "total_results": 0, "page": page, "limit": limit, "error": str(e)}
+
+    def get_article_by_id(self, article_id):
+        """
+        Retrieves a single article by its MongoDB ObjectId.
+        """
+        try:
+            article = self.articles_collection.find_one({"_id": ObjectId(article_id)})
+            if article:
+                article['_id'] = str(article['_id'])
+                logger.info(f"Retrieved article with ID: {article_id}")
+                return article
+            else:
+                logger.warning(f"Article with ID {article_id} not found.")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching article by ID {article_id}: {e}")
+            return None
+
+    def search_articles(self, query, page=1, limit=10, sort_by="published_at", sort_order="desc"):
+        """
+        Searches articles using MongoDB's text index and potentially vector search.
+        For true vector search, you'd implement $vectorSearch (requires Atlas).
+        For now, this uses text search.
+        """
+        skip = (page - 1) * limit
+        sort_direction = ASCENDING if sort_order.lower() == "asc" else DESCENDING
+
+        try:
+            # Using $text operator for full-text search
+            # Ensure you have a text index on 'title' and 'content' fields
+            # self.collection.create_index([("title", "text"), ("content", "text")])
+
+            pipeline = [
+                {
+                    '$match': {
+                        '$text': {
+                            '$search': query
+                        }
+                    }
+                },
+                {
+                    '$project': {
+                        'score': { '$meta': 'textScore' },
+                        'article_id': 1,
+                        'title': 1,
+                        'url': 1,
+                        'source': 1,
+                        'published_at': 1,
+                        'description': 1,
+                        'scraped_at': 1,
+                        'processing_status': 1,
+                        'bias_score': 1,
+                        'misinformation_risk': 1,
+                        'sentiment': 1,
+                        'credibility_score': 1,
+                        'ai_analysis': 1 # Include full analysis for detail
+                    }
+                },
+                { '$sort': { 'score': { '$meta': 'textScore' }, sort_by: sort_direction } }, # Sort by text score first, then other criteria
+                { '$skip': skip },
+                { '$limit': limit }
+            ]
+
+            articles = list(self.articles_collection.aggregate(pipeline))
+
+            # Convert ObjectId to string for JSON serialization
+            for article in articles:
+                article['_id'] = str(article['_id'])
+
+            # Count total matches for pagination
+            total_results_pipeline = [
+                {
+                    '$match': {
+                        '$text': {
+                            '$search': query
+                        }
+                    }
+                },
+                { '$count': 'total_results' }
+            ]
+            total_results_cursor = self.articles_collection.aggregate(total_results_pipeline)
+            total_results = next(total_results_cursor, {}).get('total_results', 0)
+
+            logger.info(f"Searched for '{query}', found {total_results} results. Retrieved {len(articles)} (page {page}, limit {limit})")
+            return {
+                "articles": articles,
+                "total_results": total_results,
+                "page": page,
+                "limit": limit
+            }
+        except Exception as e:
+            logger.error(f"Error searching articles with query '{query}': {e}")
+            return {"articles": [], "total_results": 0, "page": page, "limit": limit, "error": str(e)}
+
+    # You could add methods here for specific filtering or analysis result queries
+    def get_articles_by_bias_score(self, min_score=0.7, page=1, limit=10, sort_order="desc"):
+        """
+        Retrieves articles with a bias_score above a certain threshold.
+        """
+        skip = (page - 1) * limit
+        sort_direction = ASCENDING if sort_order.lower() == "asc" else DESCENDING
+
+        try:
+            query = {"bias_score": {"$gte": min_score}}
+            articles_cursor = self.articles_collection.find(query) \
+                .sort("bias_score", sort_direction) \
+                .skip(skip) \
+                .limit(limit)
+            articles = []
+            for article in articles_cursor:
+                article['_id'] = str(article['_id'])
+                articles.append(article)
+
+            total_articles = self.articles_collection.count_documents(query)
+
+            logger.info(f"Retrieved {len(articles)} high-bias articles.")
+            return {
+                "articles": articles,
+                "total_results": total_articles,
+                "page": page,
+                "limit": limit
+            }
+        except Exception as e:
+            logger.error(f"Error fetching articles by bias score: {e}")
+            return {"articles": [], "total_results": 0, "page": page, "limit": limit, "error": str(e)}
+
+    def get_articles_by_misinformation_risk(self, min_risk=0.6, page=1, limit=10, sort_order="desc"):
+        """
+        Retrieves articles with a misinformation_risk above a certain threshold.
+        """
+        skip = (page - 1) * limit
+        sort_direction = ASCENDING if sort_order.lower() == "asc" else DESCENDING
+
+        try:
+            query = {"misinformation_risk": {"$gte": min_risk}}
+            articles_cursor = self.articles_collection.find(query) \
+                .sort("misinformation_risk", sort_direction) \
+                .skip(skip) \
+                .limit(limit)
+            articles = []
+            for article in articles_cursor:
+                article['_id'] = str(article['_id'])
+                articles.append(article)
+
+            total_articles = self.articles_collection.count_documents(query)
+
+            logger.info(f"Retrieved {len(articles)} high-misinformation risk articles.")
+            return {
+                "articles": articles,
+                "total_results": total_articles,
+                "page": page,
+                "limit": limit
+            }
+        except Exception as e:
+            logger.error(f"Error fetching articles by misinformation risk: {e}")
+            return {"articles": [], "total_results": 0, "page": page, "limit": limit, "error": str(e)}
+
+
+================================================
+File: app/tasks/__init__.py
+================================================
+from .scraper import NewsAPIFetcherTask
+from .analyzer import GeminiAnalyzerTask
+
+
+================================================
+File: app/tasks/analyzer.py
+================================================
+# flask_backend/app/tasks/analyzer.py
+
+import os
+import json
+import logging
+import sys
+import random
+from datetime import datetime, timezone
+import pymongo
+from google import genai
+from google.genai import types
+from google.genai import errors
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from sentence_transformers import SentenceTransformer
+import numpy as np
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+# Pydantic models for structured JSON response (re-declared here for self-containment)
+class FactCheck(BaseModel):
+    claim: str
+    verdict: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: str
+
+class BiasAnalysis(BaseModel):
+    overall_score: float = Field(ge=0.0, le=1.0)
+    political_leaning: str
+    bias_indicators: list[str]
+    language_bias: float = Field(ge=0.0, le=1.0)
+    source_bias: float = Field(ge=0.0, le=1.0)
+    framing_bias: float = Field(ge=0.0, le=1.0)
+
+class MisinformationAnalysis(BaseModel):
+    risk_score: float = Field(ge=0.0, le=1.0)
+    fact_checks: list[FactCheck]
+    red_flags: list[str]
+
+class SentimentAnalysis(BaseModel):
+    overall_sentiment: float = Field(ge=-1.0, le=1.0)
+    emotional_tone: str
+    key_phrases: list[str]
+
+class CredibilityAssessment(BaseModel):
+    overall_score: float = Field(ge=0.0, le=1.0)
+    evidence_quality: float = Field(ge=0.0, le=1.0)
+    source_reliability: float = Field(ge=0.0, le=1.0)
+
+class AnalysisResponse(BaseModel):
+    bias_analysis: BiasAnalysis
+    misinformation_analysis: MisinformationAnalysis
+    sentiment_analysis: SentimentAnalysis
+    credibility_assessment: CredibilityAssessment
+    confidence: float = Field(ge=0.0, le=1.0)
+
+class GeminiAnalyzerTask:
+    def __init__(self, db_client, google_api_key, model_path='all-MiniLM-L6-v2'):
+        self.db = db_client
+        self.collection = self.db.articles
+
+        # Configure Gemini client
+        if not google_api_key:
+            raise ValueError("GOOGLE_API_KEY is not provided to GeminiAnalyzerTask")
+        genai.configure(api_key=google_api_key) # Use genai.configure for global API key setting
+        self.client_model = genai.GenerativeModel('gemini-2.0-flash-001') # Use the model directly
+
+        logger.info(f"Loading sentence transformer model: {model_path}...")
+        self.embedding_model = SentenceTransformer(model_path) # 384 dimensions
+
+        self.stats = {
+            'articles_analyzed': 0,
+            'high_bias_detected': 0,
+            'misinformation_flagged': 0,
+            'embeddings_generated': 0,
+            'processing_errors': 0
+        }
+
+    def generate_embedding(self, text):
+        """Generate vector embedding for text using sentence-transformers"""
+        try:
+            max_length = 10000
+            if len(text) > max_length:
+                text = text[:max_length]
+            embedding = self.embedding_model.encode(text)
+            return embedding.tolist()
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}")
+            return None
+
+    def analyze_article_comprehensive(self, article, max_retries=3):
+        """Comprehensive analysis using Gemini AI with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                prompt = f"""
+                You are TruthGuard AI, an expert media bias and misinformation detection system.
+                Analyze this news article comprehensively and return a JSON object strictly conforming to the AnalysisResponse Pydantic model.
+                Ensure all fields are present and valid, especially for float ranges (0.0 to 1.0 or -1.0 to 1.0) and list types.
+
+                Title: {article['title']}
+                Source: {article['source']}
+                Content: {article['content'][:8000]}
+                """
+
+                # Gemini 2.0 models automatically handle JSON schema if response_mime_type is application/json and response_schema is provided.
+                response = self.client_model.generate_content(
+                    prompt,
+                    generation_config=types.GenerationConfig(
+                        response_mime_type='application/json',
+                        response_schema=AnalysisResponse.model_json_schema(), # Pass Pydantic schema
+                        temperature=0.3,
+                        max_output_tokens=2000
+                    )
+                )
+
+                try:
+                    # Gemini's response.text is already the JSON string if response_mime_type is application/json
+                    analysis_data = json.loads(response.text)
+                    # Validate with Pydantic model
+                    analysis = AnalysisResponse(**analysis_data)
+                    analysis_dict = analysis.model_dump() # Convert back to dict for MongoDB
+
+                    update_fields = {
+                        'ai_analysis': analysis_dict,
+                        'bias_score': analysis_dict['bias_analysis']['overall_score'],
+                        'misinformation_risk': analysis_dict['misinformation_analysis']['risk_score'],
+                        'sentiment': analysis_dict['sentiment_analysis']['overall_sentiment'],
+                        'credibility_score': analysis_dict['credibility_assessment']['overall_score'],
+                        'processing_status': 'analyzed',
+                        'analyzed_at': datetime.now(timezone.utc),
+                        'analysis_model': 'gemini-2.0-flash-001'
+                    }
+
+                    # Generate and update embeddings if not already present or needs regeneration
+                    if 'content_embedding' not in article or article['content_embedding'] is None:
+                        content_embedding = self.generate_embedding(article['content'])
+                        if content_embedding:
+                            update_fields['content_embedding'] = content_embedding
+                            self.stats['embeddings_generated'] += 1
+
+                    if 'title_embedding' not in article or article['title_embedding'] is None:
+                        title_embedding = self.generate_embedding(article['title'])
+                        if title_embedding:
+                            update_fields['title_embedding'] = title_embedding
+                            self.stats['embeddings_generated'] += 1
+
+                    analysis_text = f"{analysis_dict['bias_analysis']['political_leaning']} {' '.join(analysis_dict['bias_analysis']['bias_indicators'])} {' '.join(analysis_dict['misinformation_analysis']['red_flags'])} {analysis_dict['sentiment_analysis']['emotional_tone']}"
+                    analysis_embedding = self.generate_embedding(analysis_text)
+                    if analysis_embedding:
+                        update_fields['analysis_embedding'] = analysis_embedding
+                        self.stats['embeddings_generated'] += 1
+
+                    self.collection.update_one(
+                        {'_id': article['_id']},
+                        {'$set': update_fields}
+                    )
+
+                    self.stats['articles_analyzed'] += 1
+                    if analysis_dict['bias_analysis']['overall_score'] > 0.7:
+                        self.stats['high_bias_detected'] += 1
+                    if analysis_dict['misinformation_analysis']['risk_score'] > 0.6:
+                        self.stats['misinformation_flagged'] += 1
+
+                    logger.info(f"Analyzed: {article['title'][:50]}... ID: {article['_id']}")
+                    return analysis_dict
+
+                except (json.JSONDecodeError, ValueError, AttributeError) as e:
+                    logger.error(f"Failed to parse or validate Gemini response for article {article['_id']}: {e}. Raw response: {response.text}")
+                    self.stats['processing_errors'] += 1
+                    # Attempt a fallback analysis if parsing/validation fails
+                    return self.generate_fallback_analysis(article)
+
+            except errors.APIError as e:
+                if e.status_code in [429, 503]: # Use status_code for APIError
+                    wait_time = 5 * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Retrying article {article['_id']} after {wait_time:.2f}s due to {e.status_code} error: {e.message}")
+                    time.sleep(wait_time)
+                    if attempt == max_retries - 1:
+                        logger.error(f"Max retries reached for article {article['_id']}: {e.status_code} - {e.message}")
+                        self.stats['processing_errors'] += 1
+                        return self.generate_fallback_analysis(article)
+                else:
+                    logger.error(f"Gemini API error for article {article['_id']}: {e.status_code} - {e.message}")
+                    self.stats['processing_errors'] += 1
+                    return self.generate_fallback_analysis(article)
+            except Exception as e:
+                logger.error(f"Unexpected error analyzing article {article['_id']}: {e}", exc_info=True)
+                self.stats['processing_errors'] += 1
+                return self.generate_fallback_analysis(article)
+        return None
+
+    def generate_fallback_analysis(self, article):
+        """Generate fallback analysis when Gemini fails or Pydantic validation fails"""
+        logger.info(f"Generating fallback analysis for article {article['_id']}")
+        content = article['content'].lower()
+        bias_keywords = {
+            'left': ['progressive', 'liberal', 'social justice', 'inequality', 'democrat'],
+            'right': ['conservative', 'traditional', 'free market', 'law and order', 'republican']
+        }
+
+        left_score = sum(1 for word in bias_keywords['left'] if word in content)
+        right_score = sum(1 for word in bias_keywords['right'] if word in content)
+
+        # Simple heuristic for bias score
+        bias_score = 0.0
+        political_leaning = 'center'
+        if left_score > right_score:
+            bias_score = min(left_score / 5, 1.0) # Max 1.0 for simplified scoring
+            political_leaning = 'left-leaning'
+        elif right_score > left_score:
+            bias_score = min(right_score / 5, 1.0)
+            political_leaning = 'right-leaning'
+
+        analysis = {
+            'bias_analysis': {
+                'overall_score': bias_score,
+                'political_leaning': political_leaning,
+                'bias_indicators': ["keyword_detection"] if bias_score > 0 else [],
+                'language_bias': bias_score,
+                'source_bias': 0.3,
+                'framing_bias': bias_score * 0.8
+            },
+            'misinformation_analysis': {
+                'risk_score': 0.3,
+                'fact_checks': [],
+                'red_flags': ["fallback_analysis_used"]
+            },
+            'sentiment_analysis': {
+                'overall_sentiment': 0.0,
+                'emotional_tone': 'neutral',
+                'key_phrases': []
+            },
+            'credibility_assessment': {
+                'overall_score': 0.5, # Lower confidence for fallback
+                'evidence_quality': 0.4,
+                'source_reliability': 0.5
+            },
+            'confidence': 0.2 # Low confidence for fallback
+        }
+
+        update_fields = {
+            'ai_analysis': analysis,
+            'bias_score': analysis['bias_analysis']['overall_score'],
+            'misinformation_risk': analysis['misinformation_analysis']['risk_score'],
+            'sentiment': analysis['sentiment_analysis']['overall_sentiment'],
+            'credibility_score': analysis['credibility_assessment']['overall_score'],
+            'processing_status': 'analyzed_fallback',
+            'analyzed_at': datetime.now(timezone.utc),
+            'analysis_model': 'fallback'
+        }
+
+        # Still attempt to generate embeddings even for fallback
+        if 'content_embedding' not in article or article['content_embedding'] is None:
+            content_embedding = self.generate_embedding(article['content'])
+            if content_embedding:
+                update_fields['content_embedding'] = content_embedding
+                self.stats['embeddings_generated'] += 1
+
+        if 'title_embedding' not in article or article['title_embedding'] is None:
+            title_embedding = self.generate_embedding(article['title'])
+            if title_embedding:
+                update_fields['title_embedding'] = title_embedding
+                self.stats['embeddings_generated'] += 1
+
+        analysis_text = f"{analysis['bias_analysis']['political_leaning']} {' '.join(analysis['bias_analysis']['bias_indicators'])} {' '.join(analysis['misinformation_analysis']['red_flags'])} {analysis['sentiment_analysis']['emotional_tone']}"
+        analysis_embedding = self.generate_embedding(analysis_text)
+        if analysis_embedding:
+            update_fields['analysis_embedding'] = analysis_embedding
+            self.stats['embeddings_generated'] += 1
+
+        try:
+            self.collection.update_one(
+                {'_id': article['_id']},
+                {'$set': update_fields}
+            )
+            logger.info(f"Updated article {article['_id']} with fallback analysis.")
+        except Exception as e:
+            logger.error(f"Error updating article {article['_id']} with fallback analysis: {e}")
+
+        return analysis
+
+    def run_analyzer(self, batch_size=50):
+        """Run analysis on unprocessed articles"""
+        logger.info(f"Starting Gemini AI batch analysis task with batch size {batch_size}...")
+
+        unprocessed = list(self.collection.find({
+            'processing_status': {'$in': ['pending', 'analyzed_fallback', None]} # Re-analyze fallbacks potentially
+        }).limit(batch_size))
+
+        if not unprocessed:
+            logger.info("No unprocessed articles found to analyze.")
+            return self.stats
+
+        logger.info(f"Found {len(unprocessed)} articles to analyze")
+
+        # Use ThreadPoolExecutor for concurrent API calls
+        # Be mindful of Gemini API rate limits. max_workers should be set cautiously.
+        # A low number like 1-2 might be safer for free tiers or lower usage.
+        # The 'time.sleep(5)' in the loop also helps.
+        with ThreadPoolExecutor(max_workers=2) as executor: # Adjusted for safer API rate limiting
+            future_to_article = {
+                executor.submit(self.analyze_article_comprehensive, article): article
+                for article in unprocessed
+            }
+
+            for future in as_completed(future_to_article):
+                article = future_to_article[future]
+                try:
+                    analysis = future.result()
+                    # Add a delay between processing each article's result to mitigate rate limiting
+                    time.sleep(5)
+                except Exception as e:
+                    logger.error(f"Analysis failed for {article['_id']}: {e}")
+
+        logger.info(f"Analysis complete. Stats: {self.stats}")
+        return self.stats
+
+
+================================================
+File: app/tasks/scraper.py
+================================================
+# flask_backend/app/tasks/scraper.py
+
+import os
+from datetime import datetime
+import time
+import logging
+import hashlib
+from newspaper import Article
+from sentence_transformers import SentenceTransformer
+import numpy as np
+from newsapi import NewsApiClient
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logger = logging.getLogger(__name__)
+
+# News API categories and topics
+CATEGORIES = ["business", "technology", "science", "health", "general"]
+TOPICS = ["misinformation", "fact checking", "media bias", "artificial intelligence", "politics", "climate"]
+
+class NewsAPIFetcherTask:
+    def __init__(self, db_client, api_key_news, model_path='all-MiniLM-L6-v2'):
+        self.db = db_client
+        self.collection = self.db.articles
+        self.newsapi = NewsApiClient(api_key=api_key_news)
+        logger.info(f"Loading sentence transformer model: {model_path}...")
+        self.model = SentenceTransformer(model_path) # 384 dimensions
+
+        # Ensure indexes for full-text search
+        logger.info("Creating MongoDB indexes if they don't exist...")
+        self.collection.create_index([("title", "text"), ("content", "text")])
+        # Create vector search index for content_embedding (requires MongoDB Atlas Search setup)
+        # For programmatic creation, you'd typically use `create_search_index` which is an Atlas feature.
+        # Example (conceptual, requires Atlas specific setup):
+        # self.collection.create_search_index(
+        #     name="default", # Or a specific name
+        #     definition={
+        #         "mappings": {
+        #             "dynamic": True,
+        #             "fields": {
+        #                 "content_embedding": {
+        #                     "type": "knnVector",
+        #                     "dimensions": 384,
+        #                     "similarity": "cosine"
+        #                 },
+        #                 "title_embedding": {
+        #                     "type": "knnVector",
+        #                     "dimensions": 384,
+        #                     "similarity": "cosine"
+        #                 }
+        #             }
+        #         }
+        #     }
+        # )
+
+        self.stats = {
+            'categories_processed': 0,
+            'topics_processed': 0,
+            'articles_found': 0,
+            'articles_stored': 0,
+            'duplicates_skipped': 0,
+            'errors': 0,
+            'embeddings_generated': 0
+        }
+
+    def fetch_top_headlines(self, country="us", category=None, page_size=20):
+        """Fetch top headlines from News API using newsapi-python"""
+        try:
+            params = {
+                "country": country,
+                "page_size": page_size
+            }
+            if category:
+                params["category"] = category
+
+            response = self.newsapi.get_top_headlines(**params)
+
+            if response["status"] != "ok":
+                logger.error(f"News API Error (Top Headlines): {response.get('message', 'Unknown error')}")
+                return []
+
+            logger.info(f"Fetched {len(response['articles'])} top headlines for category: {category or 'all'}")
+            return response["articles"]
+
+        except Exception as e:
+            logger.error(f"Error fetching top headlines: {e}")
+            self.stats['errors'] += 1
+            return []
+
+    def fetch_everything(self, query, language="en", sort_by="publishedAt", page_size=20):
+        """Fetch articles matching query from News API using newsapi-python"""
+        try:
+            response = self.newsapi.get_everything(
+                q=query,
+                language=language,
+                sort_by=sort_by,
+                page_size=page_size
+            )
+
+            if response["status"] != "ok":
+                logger.error(f"News API Error (Everything): {response.get('message', 'Unknown error')}")
+                return []
+
+            logger.info(f"Fetched {len(response['articles'])} articles for query: {query}")
+            return response["articles"]
+
+        except Exception as e:
+            logger.error(f"Error fetching articles: {e}")
+            self.stats['errors'] += 1
+            return []
+
+    def extract_full_content(self, url):
+        """Extract full article content using newspaper3k"""
+        try:
+            article = Article(url)
+            article.download()
+            article.parse()
+            return article.text if article.text else ""
+        except Exception as e:
+            logger.error(f"Error extracting content from {url}: {e}")
+            return ""
+
+    def generate_embedding(self, text):
+        """Generate vector embedding for text using sentence-transformers"""
+        try:
+            max_length = 10000
+            if len(text) > max_length:
+                text = text[:max_length]
+            embedding = self.model.encode(text)
+            self.stats['embeddings_generated'] += 1
+            return embedding.tolist()
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}")
+            return None
+
+    def process_article(self, article):
+        """Process a single article from News API"""
+        try:
+            title = article.get("title", "")
+            url = article.get("url", "")
+            source_name = article.get("source", {}).get("name", "Unknown")
+            published_at = article.get("publishedAt", "")
+            description = article.get("description", "")
+
+            if not title or not url:
+                logger.warning(f"Skipping article with missing title or URL")
+                return None
+
+            article_id = hashlib.md5(url.encode()).hexdigest()
+
+            existing = self.collection.find_one({"article_id": article_id})
+            if existing:
+                logger.info(f"Article already exists: {title[:50]}...")
+                self.stats['duplicates_skipped'] += 1
+                return None
+
+            content = self.extract_full_content(url)
+
+            if not content and description:
+                content = description
+
+            if len(content) < 200:
+                logger.warning(f"Skipping article with insufficient content: {title[:50]}...")
+                return None
+
+            content_embedding = self.generate_embedding(content)
+            title_embedding = self.generate_embedding(title)
+
+            article_doc = {
+                "article_id": article_id,
+                "title": title,
+                "url": url,
+                "source": source_name,
+                "published_at": published_at,
+                "content": content,
+                "description": description,
+                "scraped_at": datetime.utcnow(),
+                "processed": False, # Will be set to True after AI analysis
+                "processing_status": "pending", # Initial status for AI analysis
+                "content_hash": hashlib.md5(content.encode()).hexdigest(),
+                "word_count": len(content.split()),
+                "content_embedding": content_embedding,
+                "title_embedding": title_embedding,
+                "data_source": "news_api"
+            }
+            return article_doc
+
+        except Exception as e:
+            logger.error(f"Error processing article: {e}")
+            self.stats['errors'] += 1
+            return None
+
+    def store_articles(self, articles):
+        """Store articles in MongoDB"""
+        if not articles:
+            return 0
+
+        try:
+            inserted_count = 0
+            # Use bulk insert for efficiency if many articles
+            # Otherwise, iterate and insert one by one (as per original logic)
+            for article in articles:
+                if article:
+                    self.collection.insert_one(article)
+                    inserted_count += 1
+                    logger.info(f"Stored: {article['title'][:50]}...")
+
+            self.stats['articles_stored'] += inserted_count
+            logger.info(f"Stored {inserted_count} articles in MongoDB")
+            return inserted_count
+
+        except Exception as e:
+            logger.error(f"Error storing articles: {e}")
+            self.stats['errors'] += 1
+            return 0
+
+    def run_scraper(self):
+        """Run the complete fetching process"""
+        logger.info("Starting TruthGuard News API fetching task...")
+
+        all_articles = []
+
+        for category in CATEGORIES:
+            logger.info(f"Fetching top headlines for category: {category}")
+            articles = self.fetch_top_headlines(category=category)
+
+            processed_articles = []
+            with ThreadPoolExecutor(max_workers=5) as executor: # Use a thread pool for processing
+                future_to_article = {executor.submit(self.process_article, article): article for article in articles}
+                for future in as_completed(future_to_article):
+                    processed = future.result()
+                    if processed:
+                        processed_articles.append(processed)
+                        self.stats['articles_found'] += 1
+
+            logger.info(f"Processed {len(processed_articles)} articles for category {category}")
+            self.store_articles(processed_articles) # Store articles in batches
+            self.stats['categories_processed'] += 1
+            time.sleep(1) # Rate limiting for News API
+
+        for topic in TOPICS:
+            logger.info(f"Fetching articles for topic: {topic}")
+            articles = self.fetch_everything(query=topic)
+
+            processed_articles = []
+            with ThreadPoolExecutor(max_workers=5) as executor: # Use a thread pool for processing
+                future_to_article = {executor.submit(self.process_article, article): article for article in articles}
+                for future in as_completed(future_to_article):
+                    processed = future.result()
+                    if processed:
+                        processed_articles.append(processed)
+                        self.stats['articles_found'] += 1
+
+            logger.info(f"Processed {len(processed_articles)} articles for topic {topic}")
+            self.store_articles(processed_articles) # Store articles in batches
+            self.stats['topics_processed'] += 1
+            time.sleep(1) # Rate limiting for News API
+
+        logger.info(f"Fetching complete. Stats: {self.stats}")
+        return self.stats
+
+
+================================================
+File: app/utils/__init__.py
+================================================
+
+

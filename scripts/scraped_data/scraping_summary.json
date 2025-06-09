@@ -1,83 +1,83 @@
 {
-  "scraping_timestamp": "2025-06-04T04:11:13.407021",
+  "scraping_timestamp": "2025-06-06T09:12:09.161735",
   "statistics": {
     "categories_processed": 5,
     "topics_processed": 6,
-    "articles_found": 172,
-    "articles_stored": 172,
+    "articles_found": 174,
+    "articles_stored": 174,
     "duplicates_skipped": 0,
-    "errors": 4
+    "errors": 0
   },
   "sample_articles": [
     {
-      "title": "CNBC Daily Open: Elon Musk's companies report positive developments amid his return to work - CNBC",
-      "source": "CNBC",
-      "url": "https://www.cnbc.com/2025/06/03/cnbc-daily-open-good-news-for-musks-companies-amid-his-return-to-work.html",
-      "word_count": 329,
-      "published_at": "2025-06-03T00:50:00Z"
-    },
-    {
-      "title": "Stock futures slip after S&P 500 kicks off June with a modest gain: Live updates - CNBC",
-      "source": "CNBC",
-      "url": "https://www.cnbc.com/2025/06/02/stock-market-today-live-updates.html",
-      "word_count": 407,
-      "published_at": "2025-06-02T23:57:00Z"
-    },
-    {
-      "title": "Dave\u2019s Hot Chicken sold to Subway owner Roark Capital in a $1 billion deal - AP News",
-      "source": "Associated Press",
-      "url": "https://apnews.com/article/daves-hot-chicken-roark-caca42cedf915683a4707a77248b9c45",
-      "word_count": 209,
-      "published_at": "2025-06-02T23:28:00Z"
-    },
-    {
-      "title": "To prevent blackouts, Trump administration keeps another aging power plant online through summer - AP News",
-      "source": "Associated Press",
-      "url": "https://apnews.com/article/trump-pennsylvania-eddystone-power-plant-e5eb5295a6b8de72636a9478e06fec4b",
-      "word_count": 574,
-      "published_at": "2025-06-02T22:57:00Z"
-    },
-    {
-      "title": "Uber Promotes Company Veteran to COO as CEO Says He\u2019s Not Going \u2018Anywhere\u2019 - Bloomberg",
+      "title": "23andMe Sets New Auction With $305 Million New Bid From Ex-CEO - Bloomberg",
       "source": "Bloomberg",
-      "url": "https://www.bloomberg.com/news/articles/2025-06-02/uber-promotes-company-veteran-to-coo-ceo-says-he-s-not-going-anywhere",
-      "word_count": 110,
-      "published_at": "2025-06-02T22:36:51Z"
+      "url": "https://www.bloomberg.com/news/articles/2025-06-05/23andme-sets-new-auction-with-305-million-new-bid-from-ex-ceo",
+      "word_count": 87,
+      "published_at": "2025-06-05T01:35:43Z"
     },
     {
-      "title": "What is Palantir? The secretive tech company behind Trump's data collection efforts - Mashable",
-      "source": "Mashable",
-      "url": "https://mashable.com/article/what-is-palantir-trump-data-collection-database",
-      "word_count": 787,
-      "published_at": "2025-06-02T21:41:53Z"
+      "title": "Amazon planning $10B investment in North Carolina for data center and AI campus - AP News",
+      "source": "Associated Press",
+      "url": "https://apnews.com/article/amazon-north-carolina-data-center-jobs-338bef3890bb61159e1b6bedfd2efbb5",
+      "word_count": 441,
+      "published_at": "2025-06-05T01:06:00Z"
     },
     {
-      "title": "Paramount Schedules Annual Shareholder Meeting, Sets Board Expansion Amid Skydance Merger Watch - Deadline",
-      "source": "Deadline",
-      "url": "http://deadline.com/2025/06/paramount-sets-annual-shareholder-meeting-skydance-merger-1236420893/",
-      "word_count": 658,
-      "published_at": "2025-06-02T21:33:00Z"
+      "title": "How airline fees have turned baggage into billions - BBC",
+      "source": "BBC News",
+      "url": "https://www.bbc.com/news/articles/c0qg3ylx2g9o",
+      "word_count": 750,
+      "published_at": "2025-06-04T23:01:27Z"
     },
     {
-      "title": "Crypto Bros Celebrate Themselves at Bitcoin\u2019s Most MAGA Convention Yet - Rolling Stone",
-      "source": "Rolling Stone",
-      "url": "http://www.rollingstone.com/culture/culture-features/bitcoin-2025-maga-lovefest-trump-1235352924/",
-      "word_count": 3186,
-      "published_at": "2025-06-02T21:29:36Z"
+      "title": "Circle IPO Is Said to Price Above Range to Raise $1.1 Billion - Bloomberg",
+      "source": "Bloomberg",
+      "url": "https://www.bloomberg.com/news/articles/2025-06-04/circle-ipo-is-said-to-price-above-range-to-raise-1-1-billion",
+      "word_count": 36,
+      "published_at": "2025-06-04T22:15:04Z"
     },
     {
-      "title": "A runway under construction at Newark's beleaguered airport reopens early - NPR",
-      "source": "NPR",
-      "url": "https://www.npr.org/2025/06/02/nx-s1-5421234/newark-airport-closed-runway-opens-early",
-      "word_count": 548,
-      "published_at": "2025-06-02T21:05:35Z"
+      "title": "Fastest Payout Online Casinos 2025: Black Lotus Expands Customer Payment Options - GlobeNewswire",
+      "source": "GlobeNewswire",
+      "url": "https://www.globenewswire.com/news-release/2025/06/04/3094048/0/en/Fastest-Payout-Online-Casinos-2025-Black-Lotus-Expands-Customer-Payment-Options.html",
+      "word_count": 1455,
+      "published_at": "2025-06-04T22:11:22Z"
     },
     {
-      "title": "United and JetBlue: How the Blue Sky partnership will help travelers, and where there's room to grow - The Points Guy",
-      "source": "The Points Guy",
-      "url": "https://thepointsguy.com/news/united-airlines-jetblue-blue-sky-partnership/",
-      "word_count": 1464,
-      "published_at": "2025-06-02T20:33:42Z"
+      "title": "All flights grounded at Newark Airport due to staffing issues - FOX 5 New York",
+      "source": "FOX 5 NY",
+      "url": "https://www.fox5ny.com/news/newark-airport-ground-stop-staffing",
+      "word_count": 331,
+      "published_at": "2025-06-04T22:06:07Z"
+    },
+    {
+      "title": "Newport's floating Hooters location is permanently closed - WCPO 9 Cincinnati",
+      "source": "WCPO",
+      "url": "https://www.wcpo.com/news/local-news/campbell-county/newport-community/newports-floating-hooters-location-is-permanently-closed",
+      "word_count": 301,
+      "published_at": "2025-06-04T21:41:26Z"
+    },
+    {
+      "title": "Wall Street\u2019s big rally stalls following some discouraging economic data - AP News",
+      "source": "Associated Press",
+      "url": "https://apnews.com/article/stocks-markets-tariffs-trump-steel-cfaa9c8adc0658ae9a2759c56dc2bde2",
+      "word_count": 811,
+      "published_at": "2025-06-04T20:51:00Z"
+    },
+    {
+      "title": "Doritos, Cheetos, M&Ms and other popular snacks will soon have warning labels in Texas - KHOU",
+      "source": "KHOU.com",
+      "url": "https://www.khou.com/article/news/local/texas/texas-junk-food-warning-label/285-df01fbe7-cfe3-4b12-a90b-ec872144e102",
+      "word_count": 528,
+      "published_at": "2025-06-04T20:47:00Z"
+    },
+    {
+      "title": "MongoDB (NASDAQ:MDB) Reports Strong Q1, Stock Jumps 14.3% - Yahoo Finance",
+      "source": "Yahoo Entertainment",
+      "url": "https://finance.yahoo.com/news/mongodb-nasdaq-mdb-reports-strong-201108895.html",
+      "word_count": 462,
+      "published_at": "2025-06-04T20:11:08Z"
     }
   ],
   "categories_processed": [

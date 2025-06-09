@@ -1,28 +1,32 @@
 "use client"
+import { useEffect, useState } from "react"
 
 const topics = ["Politics", "Economy", "Healthcare", "Technology", "Environment", "Sports"]
 const sources = ["CNN", "Fox News", "Reuters", "BBC", "MSNBC", "AP News"]
 
-// Generate mock bias data (0-1 scale)
-const generateBiasData = () => {
-  const data = []
-  for (let i = 0; i < topics.length; i++) {
-    for (let j = 0; j < sources.length; j++) {
-      data.push({
-        topic: topics[i],
-        source: sources[j],
-        bias: Math.random(),
-        x: j,
-        y: i,
-      })
-    }
-  }
-  return data
-}
-
-const biasData = generateBiasData()
-
 export function BiasHeatmap() {
+  const [biasData, setBiasData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchBiasData() {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch("/api/analytics")
+        if (!res.ok) throw new Error("Failed to fetch bias data")
+        const data = await res.json()
+        setBiasData(data.bias_breakdown || [])
+      } catch (err: any) {
+        setError(err.message || "Unknown error")
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchBiasData()
+  }, [])
+
   const getBiasColor = (bias: number) => {
     if (bias < 0.2) return "#10b981" // Green
     if (bias < 0.4) return "#84cc16" // Light green
@@ -30,6 +34,9 @@ export function BiasHeatmap() {
     if (bias < 0.8) return "#f97316" // Orange
     return "#ef4444" // Red
   }
+
+  if (loading) return <div>Loading bias heatmap...</div>
+  if (error) return <div className="text-red-500">Error: {error}</div>
 
   return (
     <div className="space-y-4">
@@ -48,29 +55,17 @@ export function BiasHeatmap() {
               const dataPoint = biasData.find((d) => d.topic === topic && d.source === source)
               return (
                 <div
-                  key={`${topic}-${source}`}
-                  className="h-12 rounded flex items-center justify-center text-white text-xs font-medium"
-                  style={{ backgroundColor: getBiasColor(dataPoint?.bias || 0) }}
-                  title={`${topic} - ${source}: ${((dataPoint?.bias || 0) * 100).toFixed(1)}% bias`}
+                  key={source}
+                  className="h-8 w-8 flex items-center justify-center rounded"
+                  style={{ background: dataPoint ? getBiasColor(dataPoint.bias) : "#e5e7eb" }}
+                  title={dataPoint ? `Bias: ${(dataPoint.bias * 100).toFixed(1)}%` : "No data"}
                 >
-                  {((dataPoint?.bias || 0) * 100).toFixed(0)}%
+                  {dataPoint ? (dataPoint.bias * 100).toFixed(0) : "-"}
                 </div>
               )
             })}
           </div>
         ))}
-      </div>
-
-      <div className="flex items-center justify-center space-x-4 text-sm">
-        <span>Low Bias</span>
-        <div className="flex space-x-1">
-          <div className="w-4 h-4 rounded" style={{ backgroundColor: "#10b981" }}></div>
-          <div className="w-4 h-4 rounded" style={{ backgroundColor: "#84cc16" }}></div>
-          <div className="w-4 h-4 rounded" style={{ backgroundColor: "#eab308" }}></div>
-          <div className="w-4 h-4 rounded" style={{ backgroundColor: "#f97316" }}></div>
-          <div className="w-4 h-4 rounded" style={{ backgroundColor: "#ef4444" }}></div>
-        </div>
-        <span>High Bias</span>
       </div>
     </div>
   )

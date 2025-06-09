@@ -1,19 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { TrendingUp, ArrowRight, AlertTriangle } from "lucide-react"
-
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, ArrowRight, AlertTriangle } from "lucide-react"
 
 interface Topic {
-  id: string // Changed to string to allow for generated IDs
+  id: string
   name: string
   biasScore: number
   misinfoRisk: number
@@ -23,19 +17,16 @@ interface Topic {
   category: string
 }
 
-// Define an interface for the article structure based on the API
 interface Article {
-  _id: string // Assuming MongoDB ObjectId as string
+  _id: string
   title: string
-  category?: string // Optional, as we might need to derive it
+  category?: string
   bias_score?: number
   misinformation_risk?: number
-  source_name?: string // Assuming this field exists for source count
-  published_at: string // Assuming ISO date string
-  content_preview?: string // For deriving category if needed
-  // Add other relevant fields from the article structure
+  source_name?: string
+  published_at: string
+  content_preview?: string
 }
-
 
 export function TrendingTopics() {
   const [topics, setTopics] = useState<Topic[]>([])
@@ -54,8 +45,7 @@ export function TrendingTopics() {
         const data = await response.json()
         const articles: Article[] = data.articles || []
 
-        // Group articles by category
-        const groupedByCategory: Record<string, Article[]> = articles.reduce((acc, article) => {
+        const groupedByCategory = articles.reduce((acc, article) => {
           const category = article.category || "General"
           if (!acc[category]) {
             acc[category] = []
@@ -64,19 +54,18 @@ export function TrendingTopics() {
           return acc
         }, {} as Record<string, Article[]>)
 
-        // Transform grouped articles into Topic structure
-        const transformedTopics: Topic[] = Object.entries(groupedByCategory).map(([categoryName, categoryArticles], index) => {
+        const transformedTopics: Topic[] = Object.entries(groupedByCategory).map(([categoryName, categoryArticles]) => {
           const totalBiasScore = categoryArticles.reduce((sum, article) => sum + (article.bias_score || 0), 0)
           const totalMisinfoRisk = categoryArticles.reduce((sum, article) => sum + (article.misinformation_risk || 0), 0)
           const uniqueSources = new Set(categoryArticles.map(article => article.source_name).filter(Boolean))
 
           return {
-            id: categoryName, // Use category name as ID
+            id: categoryName,
             name: categoryName,
             biasScore: categoryArticles.length > 0 ? totalBiasScore / categoryArticles.length : 0,
             misinfoRisk: categoryArticles.length > 0 ? totalMisinfoRisk / categoryArticles.length : 0,
-            trendDirection: "stable", // Placeholder
-            trendPercentage: 0, // Placeholder
+            trendDirection: "stable", // TODO: calculate actual trend
+            trendPercentage: 0, // TODO: calculate trend %
             sources: uniqueSources.size,
             category: categoryName,
           }
@@ -84,7 +73,8 @@ export function TrendingTopics() {
 
         setTopics(transformedTopics)
       } catch (err) {
-        setError(err.message)
+        const message = err instanceof Error ? err.message : "Unknown error"
+        setError(message)
       } finally {
         setIsLoading(false)
       }
@@ -93,9 +83,8 @@ export function TrendingTopics() {
     fetchTopics()
   }, [])
 
-  const filteredTopics = selectedCategory ? topics.filter((topic) => topic.category === selectedCategory) : topics
-
-  const categories = Array.from(new Set(topics.map((topic) => topic.category)))
+  const filteredTopics = selectedCategory ? topics.filter(topic => topic.category === selectedCategory) : topics
+  const categories = Array.from(new Set(topics.map(topic => topic.category)))
 
   const getBiasColor = (score: number) => {
     if (score < 0.3) return "bg-green-100 text-green-800"
@@ -122,82 +111,84 @@ export function TrendingTopics() {
   }
 
   return (
-    <div className="space-y-6">
-      {isLoading && <p>Loading trending topics...</p>}
-      {error && <p className="text-red-500">Error: {error}</p>}
-      {!isLoading && !error && (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={selectedCategory === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCategory(null)}
-            >
-              All Topics
-            </Button>
-            {categories.map((category) => (
-              <Button
-                key={category}
-                variant={selectedCategory === category ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(category)}
-              >
-                {category}
-              </Button>
-            ))}
-          </div>
-
-          {filteredTopics.length === 0 && <p>No trending topics found.</p>}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTopics.map((topic) => (
-              <Card key={topic.id} className="overflow-hidden">
-                <CardContent className="p-0">
-                  <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="font-bold text-lg mb-1">{topic.name}</h3>
-                    <Badge variant="outline">{topic.category}</Badge>
-                  </div>
-                  <div className={`flex items-center space-x-1 ${getTrendColor(topic.trendDirection)}`}>
-                    {getTrendIcon(topic.trendDirection)}
-                    <span className="font-bold">{topic.trendPercentage}%</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Bias Score:</span>
-                    <Badge className={getBiasColor(topic.biasScore)}>{(topic.biasScore * 100).toFixed(0)}%</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Misinfo Risk:</span>
-                    <Badge className={getRiskColor(topic.misinfoRisk)}>{(topic.misinfoRisk * 100).toFixed(0)}%</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Sources:</span>
-                    <span className="text-sm font-medium">{topic.sources} outlets</span>
-                  </div>
-                </div>
-
-                {topic.misinfoRisk > 0.6 && (
-                  <div className="mt-4 p-3 bg-red-50 rounded-md flex items-start space-x-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                    <span className="text-xs text-red-800">High misinformation activity detected in this topic</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t p-4 bg-gray-50">
-                <Button variant="ghost" size="sm" className="w-full justify-between">
-                  View Topic Analysis
-                  <ArrowRight className="h-4 w-4" />
+      <div className="space-y-6">
+        {isLoading && <p>Loading trending topics...</p>}
+        {error && <p className="text-red-500">Error: {error}</p>}
+        {!isLoading && !error && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                    variant={selectedCategory === null ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(null)}
+                >
+                  All Topics
                 </Button>
+                {categories.map((category) => (
+                    <Button
+                        key={category}
+                        variant={selectedCategory === category ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setSelectedCategory(category)}
+                    >
+                      {category}
+                    </Button>
+                ))}
               </div>
-            </CardContent>
-          </Card>
-        ))}
+
+              {filteredTopics.length === 0 && <p>No trending topics found.</p>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredTopics.map((topic) => (
+                    <Card key={topic.id} className="overflow-hidden">
+                      <CardContent className="p-0">
+                        <div className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <h3 className="font-bold text-lg mb-1">{topic.name}</h3>
+                              <Badge variant="outline">{topic.category}</Badge>
+                            </div>
+                            <div className={`flex items-center space-x-1 ${getTrendColor(topic.trendDirection)}`}>
+                              {getTrendIcon(topic.trendDirection)}
+                              <span className="font-bold">{topic.trendPercentage}%</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Bias Score:</span>
+                              <Badge className={getBiasColor(topic.biasScore)}>{(topic.biasScore * 100).toFixed(0)}%</Badge>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Misinfo Risk:</span>
+                              <Badge className={getRiskColor(topic.misinfoRisk)}>{(topic.misinfoRisk * 100).toFixed(0)}%</Badge>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Sources:</span>
+                              <span className="text-sm font-medium">{topic.sources} outlets</span>
+                            </div>
+                          </div>
+
+                          {topic.misinfoRisk > 0.6 && (
+                              <div className="mt-4 p-3 bg-red-50 rounded-md flex items-start space-x-2">
+                                <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
+                                <span className="text-xs text-red-800">High misinformation activity detected in this topic</span>
+                              </div>
+                          )}
+                        </div>
+
+                        <div className="border-t p-4 bg-gray-50">
+                          <Button variant="ghost" size="sm" className="w-full justify-between">
+                            View Topic Analysis
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                ))}
+              </div>
+            </>
+        )}
       </div>
-    </div>
   )
 }

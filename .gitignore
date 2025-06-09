@@ -25,3 +25,8 @@ scripts/.env.local
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# flask backend
+flask_backend/venv/
+flask_backend/__pycache__/
+flask_backend/.env
